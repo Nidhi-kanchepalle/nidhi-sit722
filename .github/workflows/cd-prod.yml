@@ -3,6 +3,9 @@ name: Deploy to Production AKS (main)
 on:
   push:
     branches: [ "main" ]
+  pull_request:
+    types: [closed]
+    branches: [ "main" ]
 
 env:
   LOCATION: "australiaeast"
