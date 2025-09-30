@@ -1,0 +1,119 @@
+name: CI + Ephemeral Staging (testing)
+
+on:
+  push:
+    branches: [ "testing" ]
+
+env:
+  LOCATION: "australiaeast"
+  SUBSCRIPTION_ID: "c564ea44-58b2-4e72-9cce-a6c07db2cf60"
+  RG_STG: "rg-sit722-nidhi-stg"
+  ACR_NAME: "sit722nidhiacr"
+  REGISTRY: ${{ secrets.ACR_LOGIN_SERVER }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set subscription
+        run: az account set --subscription "$SUBSCRIPTION_ID"
+
+      - name: Login to ACR
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Build & push backend images
+        run: |
+          set -e
+          docker build -t $REGISTRY/customer_service:latest WEEK10D/backend/customer_service
+          docker build -t $REGISTRY/product_service:latest  WEEK10D/backend/product_service
+          docker build -t $REGISTRY/order_service:latest    WEEK10D/backend/order_service
+          docker push $REGISTRY/customer_service:latest
+          docker push $REGISTRY/product_service:latest
+          docker push $REGISTRY/order_service:latest
+
+      - name: Build & push frontend image
+        run: |
+          set -e
+          docker build -t $REGISTRY/frontend:latest WEEK10D/frontend
+          docker push $REGISTRY/frontend:latest
+
+  deploy-to-ephemeral-staging:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set subscription
+        run: az account set --subscription "$SUBSCRIPTION_ID"
+
+      - name: Ensure staging resource group
+        run: az group create -n "$RG_STG" -l "$LOCATION"
+
+      - name: Create ephemeral AKS (staging)
+        id: aks
+        run: |
+          CLUSTER="aks-stg-${{ github.run_id }}"
+          az aks create -g "$RG_STG" -n "$CLUSTER" \
+            --node-count 1 --enable-managed-identity --generate-ssh-keys
+          az aks update -g "$RG_STG" -n "$CLUSTER" --attach-acr "$ACR_NAME"
+          echo "cluster=$CLUSTER" >> $GITHUB_OUTPUT
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Get kubeconfig
+        run: az aks get-credentials -g "$RG_STG" -n "${{ steps.aks.outputs.cluster }}" --admin --overwrite-existing
+
+      - name: Apply config & secrets
+        run: |
+          kubectl apply -f WEEK10D/k8s/configmaps.yaml
+          kubectl apply -f WEEK10D/k8s/secrets.yaml
+
+      - name: Deploy databases
+        run: |
+          kubectl apply -f WEEK10D/k8s/customer-db.yaml
+          kubectl apply -f WEEK10D/k8s/product-db.yaml
+          kubectl apply -f WEEK10D/k8s/order-db.yaml
+          kubectl rollout status deploy/customer-db-deployment-w10e1 --timeout=180s || true
+          kubectl rollout status deploy/product-db-deployment-w10e1  --timeout=180s || true
+          kubectl rollout status deploy/order-db-deployment-w10e1    --timeout=180s || true
+
+      - name: Deploy application workloads
+        run: |
+          kubectl apply -f WEEK10D/k8s/customer-service.yaml
+          kubectl apply -f WEEK10D/k8s/product-service.yaml
+          kubectl apply -f WEEK10D/k8s/order-service.yaml
+          kubectl apply -f WEEK10D/k8s/frontend.yaml
+
+      - name: Wait for product-service external IP
+        id: svc_ip
+        run: |
+          for i in {1..90}; do
+            IP=$(kubectl get svc product-service-w10e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            if [ -n "$IP" ]; then echo "ip=$IP" >> $GITHUB_OUTPUT; exit 0; fi
+            echo "waiting for LoadBalancer IP... ($i/90)"; sleep 10
+          done
+          echo "Timed out waiting for LB IP"; exit 1
+
+      - name: Smoke test (HTTP 200 on / or /docs)
+        run: |
+          set -e
+          curl -fsS "http://${{ steps.svc_ip.outputs.ip }}:8000/" >/dev/null || \
+          curl -fsS "http://${{ steps.svc_ip.outputs.ip }}:8000/docs" >/dev/null
+          echo "Smoke test OK"
+
+      - name: ALWAYS delete ephemeral AKS
+        if: always()
+        run: az aks delete -y -g "$RG_STG" -n "${{ steps.aks.outputs.cluster }}"
