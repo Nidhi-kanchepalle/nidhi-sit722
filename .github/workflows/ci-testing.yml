@@ -58,9 +58,6 @@ jobs:
       - name: Set subscription
         run: az account set --subscription "$SUBSCRIPTION_ID"
 
-      - name: Ensure staging resource group
-        run: az group create -n "$RG_STG" -l "$LOCATION"
-
       - name: Create ephemeral AKS (staging)
         id: aks
         run: |
@@ -120,4 +117,4 @@ jobs:
         if: always()
         run: |
           echo "Deleting cluster: ${{ steps.aks.outputs.cluster }} from $RG_STG"
-          az aks delete -y -g "$RG_STG" -n "${{ steps.aks.outputs.cluster }}"
+          az aks delete -y -g "$RG_STG" -n "${{ steps.aks.outputs.cluster }}" || true
