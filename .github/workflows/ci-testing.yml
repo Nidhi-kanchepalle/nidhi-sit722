@@ -65,6 +65,7 @@ jobs:
         id: aks
         run: |
           CLUSTER="aks-stg-${{ github.run_id }}"
+          echo "Creating cluster $CLUSTER in $RG_STG"
           az aks create -g "$RG_STG" -n "$CLUSTER" \
             --node-count 1 --enable-managed-identity --generate-ssh-keys
           az aks update -g "$RG_STG" -n "$CLUSTER" --attach-acr "$ACR_NAME"
@@ -110,10 +111,13 @@ jobs:
       - name: Smoke test (HTTP 200 on / or /docs)
         run: |
           set -e
+          echo "Testing product service at ${{ steps.svc_ip.outputs.ip }}"
           curl -fsS "http://${{ steps.svc_ip.outputs.ip }}:8000/" >/dev/null || \
           curl -fsS "http://${{ steps.svc_ip.outputs.ip }}:8000/docs" >/dev/null
           echo "Smoke test OK"
 
       - name: ALWAYS delete ephemeral AKS
         if: always()
-        run: az aks delete -y -g "$RG_STG" -n "${{ steps.aks.outputs.cluster }}"
+        run: |
+          echo "Deleting cluster: ${{ steps.aks.outputs.cluster }} from $RG_STG"
+          az aks delete -y -g "$RG_STG" -n "${{ steps.aks.outputs.cluster }}"
