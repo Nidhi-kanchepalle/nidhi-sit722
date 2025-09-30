@@ -1,9 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
     // API endpoints for the Product, Order, and Customer services.
     // These ports are mapped from the Docker containers to the host machine in docker-compose.yml.
-    const PRODUCT_API_BASE_URL = '/api';
-    const ORDER_API_BASE_URL   = '/api';
-    const CUSTOMER_API_BASE_URL = '/api';
+    const PRODUCT_API_BASE_URL = 'http://4.200.64.41:8000';
+    const ORDER_API_BASE_URL   = 'http://20.227.79.93:8001';
+    const CUSTOMER_API_BASE_URL = 'http://4.237.247.90:8000';
 
     // DOM Elements
     const messageBox = document.getElementById('message-box');
