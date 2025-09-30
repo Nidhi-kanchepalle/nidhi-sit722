@@ -32,9 +32,9 @@ jobs:
       - name: Build & push backend images
         run: |
           set -e
-          docker build -t $REGISTRY/customer_service:latest WEEK10D/backend/customer_service
-          docker build -t $REGISTRY/product_service:latest  WEEK10D/backend/product_service
-          docker build -t $REGISTRY/order_service:latest    WEEK10D/backend/order_service
+          docker build -t $REGISTRY/customer_service:latest backend/customer_service
+          docker build -t $REGISTRY/product_service:latest  backend/product_service
+          docker build -t $REGISTRY/order_service:latest    backend/order_service
           docker push $REGISTRY/customer_service:latest
           docker push $REGISTRY/product_service:latest
           docker push $REGISTRY/order_service:latest
@@ -42,7 +42,7 @@ jobs:
       - name: Build & push frontend image
         run: |
           set -e
-          docker build -t $REGISTRY/frontend:latest WEEK10D/frontend
+          docker build -t $REGISTRY/frontend:latest frontend
           docker push $REGISTRY/frontend:latest
 
       - name: Install kubectl
@@ -53,21 +53,21 @@ jobs:
 
       - name: Apply config & secrets
         run: |
-          kubectl apply -f WEEK10D/k8s/configmaps.yaml
-          kubectl apply -f WEEK10D/k8s/secrets.yaml
+          kubectl apply -f k8s/configmaps.yaml
+          kubectl apply -f k8s/secrets.yaml
 
       - name: Apply databases
         run: |
-          kubectl apply -f WEEK10D/k8s/customer-db.yaml
-          kubectl apply -f WEEK10D/k8s/product-db.yaml
-          kubectl apply -f WEEK10D/k8s/order-db.yaml
+          kubectl apply -f k8s/customer-db.yaml
+          kubectl apply -f k8s/product-db.yaml
+          kubectl apply -f k8s/order-db.yaml
           kubectl rollout status deploy/customer-db-deployment-w10e1 --timeout=180s || true
           kubectl rollout status deploy/product-db-deployment-w10e1  --timeout=180s || true
           kubectl rollout status deploy/order-db-deployment-w10e1    --timeout=180s || true
 
       - name: Apply application workloads
         run: |
-          kubectl apply -f WEEK10D/k8s/customer-service.yaml
-          kubectl apply -f WEEK10D/k8s/product-service.yaml
-          kubectl apply -f WEEK10D/k8s/order-service.yaml
-          kubectl apply -f WEEK10D/k8s/frontend.yaml
+          kubectl apply -f k8s/customer-service.yaml
+          kubectl apply -f k8s/product-service.yaml
+          kubectl apply -f k8s/order-service.yaml
+          kubectl apply -f k8s/frontend.yaml
